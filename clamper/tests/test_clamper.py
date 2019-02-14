@@ -25,7 +25,7 @@ class OutAdapter(Adapter):
     def __init__(self, dut, port, seq, *, num=3, den=4):
         self.dut = dut
         self.port = port
-        self.reversed = seq[:]
+        self.reversed = list(seq)
         self.reversed.reverse()
         self.idx = 0
         self.ready = False
@@ -53,7 +53,7 @@ class InAdapter(Adapter):
     def __init__(self, dut, port, seq, *, num=3, den=4):
         self.dut = dut
         self.port = port
-        self.reversed = seq[:]
+        self.reversed = list(seq)
         self.reversed.reverse()
         self.valid = False
         self.fired = False
@@ -71,6 +71,26 @@ class InAdapter(Adapter):
         self.fired = getattr(self.dut, self.port + '_ready') != 0 and self.valid
         if self.fired:
             self.reversed.pop()
+
+    def done(self):
+        return len(self.reversed) > 0
+
+class AdapterManager:
+    def __init__( self):
+        self.adapters = []
+    def add(self, adapter):
+        self.adapters.append(adapter)
+
+    def do_peeks(self):
+        for adapter in self.adapters:
+            adapter.do_peek()
+
+    def do_pokes(self):
+        for adapter in self.adapters:
+            adapter.do_pokes()
+
+    def done(self):
+        return all(adapter.done() for adapter in self.adapters)
 
 
 @cocotb.test()
@@ -96,14 +116,9 @@ def basic_test(dut):
             for i in range(cl_per_row):
                 yield lst[i*elems_per_cl:(i+1)*elems_per_cl]
 
-    out = list(toCL(out))
-    res = list(toCL(res))
-
-    def roll( num: int, den: int) -> bool:
-        return random.randrange(den) < num
-
-    iA = InAdapter( dut, 'io_out', out)
-    oA = OutAdapter( dut, 'io_res', res)
+    mgr = AdapterManager()
+    mgr.add( InAdapter( dut, 'io_out', toCL(out)))
+    mgr.add( OutAdapter( dut, 'io_res', toCL(res)))
 
     cocotb.fork( clock_gen(dut.clock))
 
@@ -118,23 +133,14 @@ def basic_test(dut):
     dut.io_start = 1
 
     max_cycles = 2000
-    num = 3
-    den = 4
-
     cycles = 0
-    res_idx = 0
-    while not oA.done() and cycles < max_cycles:
-        # pokes
-        iA.do_poke()
-        oA.do_poke()
+    while not mgr.done() and cycles < max_cycles:
+        mgr.do_pokes()
         yield ReadOnly()
 
-        # peeks
-        iA.do_peek()
-        oA.do_peek()
-
+        mgr.do_peeks()
         yield clkedge
         cycles += 1
         
-    if not oA.done():
-        raise TestFailure("Result stream not fully consumed after %d cycles. %d items remaining" % (max_cycles,len(res)))
+    if not mgr.done():
+        raise TestFailure("Streams not fully consumed after %d cycles." % max_cycles)
