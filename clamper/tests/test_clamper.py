@@ -12,6 +12,67 @@ def clock_gen(signal):
         signal <= 1
         yield Timer(500) # ps
 
+
+class Adapter:
+    def __init__(self, num, den):
+        self.num = num
+        self.den = den
+
+    def roll(self):
+        return random.randrange(self.den) < self.num
+
+class OutAdapter(Adapter):
+    def __init__(self, dut, port, seq, *, num=3, den=4):
+        self.dut = dut
+        self.port = port
+        self.reversed = seq[:]
+        self.reversed.reverse()
+        self.idx = 0
+        self.ready = False
+        self.fired = False
+        super().__init__( num, den)
+
+    def do_poke(self):
+        p = self.roll()
+        self.ready = self.ready and not self.fired or p
+        setattr( self.dut, self.port + '_ready', 1 if self.ready else 0)
+        
+    def do_peek(self):
+        self.fired = getattr(self.dut, self.port + '_valid') != 0 and self.ready
+        if self.fired:
+            for (i,x) in enumerate(self.reversed.pop()):
+                v = getattr( self.dut, self.port + ("_bits_%d" % i))
+                if int(v) != x:
+                    raise TestFailure("result is incorrect: %s[%d][%d](%d) != %d" % ( self.port, self.idx, i, x, v))
+            self.idx += 1
+
+    def done(self):
+        return len(self.reversed) > 0
+
+class InAdapter(Adapter):
+    def __init__(self, dut, port, seq, *, num=3, den=4):
+        self.dut = dut
+        self.port = port
+        self.reversed = seq[:]
+        self.reversed.reverse()
+        self.valid = False
+        self.fired = False
+        super().__init__( num, den)
+
+    def do_poke(self):
+        p = self.roll() and len(self.reversed) > 0
+        self.valid = self.valid and not self.fired or p
+        setattr( self.dut, self.port + '_valid', 1 if self.valid else 0)
+        if self.valid:
+            for (i,v) in enumerate(self.reversed[-1]):
+                setattr( self.dut, self.port + ("_bits_%d" % i), v)
+        
+    def do_peek(self):
+        self.fired = getattr(self.dut, self.port + '_ready') != 0 and self.valid
+        if self.fired:
+            self.reversed.pop()
+
+
 @cocotb.test()
 def basic_test(dut):
     cl_per_row = 3
@@ -38,14 +99,11 @@ def basic_test(dut):
     out = list(toCL(out))
     res = list(toCL(res))
 
-    def roll( num, den):
+    def roll( num: int, den: int) -> bool:
         return random.randrange(den) < num
 
-#
-# Reverse lists so pop() will be efficent
-#
-    out.reverse()
-    res.reverse()
+    iA = InAdapter( dut, 'io_out', out)
+    oA = OutAdapter( dut, 'io_res', res)
 
     cocotb.fork( clock_gen(dut.clock))
 
@@ -59,49 +117,24 @@ def basic_test(dut):
     dut.reset = 0
     dut.io_start = 1
 
-    out_valid = False
-    res_ready = False
-
-    f_out = False
-    f_res = False
-
     max_cycles = 2000
-    num = 32
+    num = 3
     den = 4
 
     cycles = 0
     res_idx = 0
-    while len(res) > 0 and cycles < max_cycles:
+    while not oA.done() and cycles < max_cycles:
         # pokes
-        p_out_valid = roll(num, den) and len(out) > 0
-        out_valid = out_valid and not f_out or p_out_valid
-        dut.io_out_valid = 1 if out_valid else 0
-        if out_valid:
-            for (i,v) in enumerate(out[-1]):
-                setattr( dut, "io_out_bits_%d" % i, v)
-
-        p_res_ready = roll(num, den)
-        res_ready = res_ready and not f_res or p_res_ready
-        dut.io_res_ready = 1 if res_ready else 0
-
+        iA.do_poke()
+        oA.do_poke()
         yield ReadOnly()
 
         # peeks
-        f_out = dut.io_out_ready != 0 and out_valid
-        if f_out:
-            out.pop()
-
-        f_res = dut.io_res_valid != 0 and res_ready
-        if f_res:
-            r = res.pop()
-            for (i,x) in enumerate(r):
-                v = getattr( dut, "io_res_bits_%d" % i)
-                if int(v) != x:
-                    raise TestFailure("result is incorrect: res[%d][%d](%d) != %d" % ( res_idx, i, x, v))
-            res_idx += 1
+        iA.do_peek()
+        oA.do_peek()
 
         yield clkedge
         cycles += 1
         
-    if len(res) > 0:
+    if not oA.done():
         raise TestFailure("Result stream not fully consumed after %d cycles. %d items remaining" % (max_cycles,len(res)))
