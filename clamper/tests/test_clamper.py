@@ -47,7 +47,7 @@ class OutAdapter(Adapter):
             self.idx += 1
 
     def done(self):
-        return len(self.reversed) > 0
+        return len(self.reversed) == 0
 
 class InAdapter(Adapter):
     def __init__(self, dut, port, seq, *, num=3, den=4):
@@ -73,7 +73,7 @@ class InAdapter(Adapter):
             self.reversed.pop()
 
     def done(self):
-        return len(self.reversed) > 0
+        return len(self.reversed) == 0
 
 class AdapterManager:
     def __init__( self):
@@ -87,7 +87,7 @@ class AdapterManager:
 
     def do_pokes(self):
         for adapter in self.adapters:
-            adapter.do_pokes()
+            adapter.do_poke()
 
     def done(self):
         return all(adapter.done() for adapter in self.adapters)
