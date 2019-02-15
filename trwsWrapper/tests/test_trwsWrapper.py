@@ -1,6 +1,6 @@
 # Simple tests for an adder module
 import cocotb
-from cocotb.triggers import Timer, RisingEdge, ReadOnly, ReadWrite
+from cocotb.triggers import Timer, RisingEdge, ReadOnly
 from cocotb.result import TestFailure
 import random
 
@@ -240,7 +240,6 @@ def basic_test(dut):
 
         yield ReadOnly()
         for i in range(20):
-            print( dut.io_done, dut.m.backend_io_done, dut.m.loaf_io_doneLoading)
             yield clkedge
 
         dut.reset = 0
@@ -263,7 +262,6 @@ def basic_test(dut):
         cycles = 0
 
         while int(dut.io_done) == 0 and cycles < max_cycles:
-            print( cycles, dut.io_done, dut.m.backend_io_done, dut.m.loaf_io_doneLoading)
             mgr.do_pokes()
             yield ReadOnly()
 
