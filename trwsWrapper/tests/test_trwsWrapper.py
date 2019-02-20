@@ -122,7 +122,7 @@ class AdapterManager:
 @cocotb.test()
 def basic_test(dut):
     cl_per_row = 3
-    elems_per_cl = 8
+    elems_per_cl = 32
     
     precision = 8
     radixPoint = 10
@@ -258,7 +258,7 @@ def basic_test(dut):
             mgr.add( InAdapter( dut, 'io_mi', toCL(MI)))
             mgr.add( OutAdapter( dut, 'io_mo', toCL(MO)))
 
-        max_cycles = 10000
+        max_cycles = 100000000
         cycles = 0
 
         while int(dut.io_done) == 0 and cycles < max_cycles:
