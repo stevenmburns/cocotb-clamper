@@ -1,3 +1,4 @@
+SIM ?= vcs
 TOPLEVEL_LANG ?= verilog
 
 PWD=$(shell pwd)
