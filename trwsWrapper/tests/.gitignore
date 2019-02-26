@@ -1,5 +1,8 @@
-*~
-sim_build/
+DVEfiles/
 build/
-__pycache__/
+sim_build/
+*~
+*.pyc
+ucli.key
 results.xml
+*.log
